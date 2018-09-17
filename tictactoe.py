@@ -89,13 +89,17 @@ class STATUS:
 
 class TicTacToe(Board):
     
-    def __init__(self, n):
+    def __init__(self, n=3, chesses=['o','x']):
         Board.__init__(self, n, n, ' ')
         self.status = STATUS.CONTINUE
+        self.chesses = chesses
 
-    def place(self, chess, pos):
-        self._place(chess, pos, self._check_rule, self.print_and_judge, chess)
-    
+    def place(self, chess, pos, print_board=False, print_msg=True):
+        self._place(chess, pos, self._check_rule, self.judge, print_board, print_msg)
+
+    def fast_place(self, chess, pos):
+        self.board[pos].status = chess
+        
     def _check_rule(self, chess, pos):
         if self.board[pos]._is_empty():
             return True
@@ -106,30 +110,38 @@ class TicTacToe(Board):
         chess_pos = [pos for pos, cell in self.board.items() if cell.status == chess]
         row = [pos[0] for pos in chess_pos]
         col = [pos[1] for pos in chess_pos]
-        if collections.Counter(row).most_common(1)[0][1] == self.n_rows or collections.Counter(col).most_common(1)[0][1] == self.n_cols or set((i,i) for i in range(self.n_rows)) - set(chess_pos) == set([]) or set((i,self.n_cols - i) for i in range(self.n_rows)) - set(chess_pos) == set([]):
+        if (row and collections.Counter(row).most_common(1)[0][1] == self.n_rows) or (col and collections.Counter(col).most_common(1)[0][1] == self.n_cols) or set((i,i) for i in range(self.n_rows)) - set(chess_pos) == set([]) or set((i,self.n_cols - i - 1) for i in range(self.n_rows)) - set(chess_pos) == set([]):
             return True
         return False
 
-    def print_and_judge(self, chess):
-        print self
-        msg = ['{chess} win, game end'.format(chess=chess), 'tie']
+    def judge(self, print_board=False, print_msg=True):
+        if print_board:
+            print self
         flag = -1
-        if self.check_win_for(chess):
+        chess = None
+        if self.check_win_for(self.chesses[0]):
             flag = 0
+            chess = self.chesses[0]
+        elif self.check_win_for(self.chesses[1]):
+            flag = 0
+            chess = self.chesses[1]
         elif self._is_full():
             flag = 1
-
+            
+        msg = ['{chess} win, game end'.format(chess=chess), 'tie']
         if flag != -1:
-            self.end_game(msg[flag])
+            self.end_game(msg[flag], print_msg)
 
-    def end_game(self, msg):
+    def end_game(self, msg, print_msg):
         self.status = STATUS.TERMINAL
-        print msg
+        if print_msg:
+            print msg
 
     def is_end(self):
         return self.status == STATUS.TERMINAL
         
-    def reset():
+    def reset(self):
+        self.status = STATUS.CONTINUE
         self._reset()
         
 if __name__ == '__main__':
