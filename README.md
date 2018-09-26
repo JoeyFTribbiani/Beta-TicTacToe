@@ -9,5 +9,5 @@
 
 <strong>To be continued! Have Fun~</strong>
 
-<small>Author: Wenchao Mo</small>
-<small>Contact: vincentmo1989@gmail.com</small>
+<h6>Author: Wenchao Mo</h6>
+<h6>Contact: vincentmo1989@gmail.com</h6>
