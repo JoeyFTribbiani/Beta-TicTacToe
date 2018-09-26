@@ -10,8 +10,8 @@ class Robot(object):
         self.model = UCT_Model()
         self.game = game
         self.game_states = set([])
-        INPUT_SHAPE = 36
-        HIDDEN_DIMS = (100,100,100)
+        INPUT_SHAPE = self.game.n_rows*self.game.n_cols
+        HIDDEN_DIMS = (100,70,50,20,3)
         OUTPUT_SHAPE = 1
         self.value_network = ValueNetwork(INPUT_SHAPE, HIDDEN_DIMS, OUTPUT_SHAPE)
         self._cache_mapping_set = self._create_mapping_state_set()
@@ -19,9 +19,12 @@ class Robot(object):
     def load_value_network(self, model_path):
         self.value_network.load_model(model_path)
         
-    def generate_random_game_state(self, is_training=False):
-        n = random.randint(0,self.game.n_rows)
-        i = 0
+    def generate_random_game_state(self,next_player=0,max_chess=0):
+        if max_chess == 0:
+            n = 0
+        else:
+            n = random.randint(0,max_chess)
+        i = next_player
         x_num, o_num = n+i, n
         state = 'x' * x_num + 'o' * o_num +' ' * (self.game.n_rows * self.game.n_cols - x_num - o_num)
         return ''.join(random.sample(state,len(state)))
@@ -92,10 +95,10 @@ class Robot(object):
         i = moves[max(moves.keys())]
         return (i/self.game.n_rows, i%self.game.n_cols)
         
-    def get_optimal_move_from_UCT_model(self, s):
+    def get_optimal_move_from_UCT_model(self, s, is_training=True):
         indices = [m.start() for m in re.finditer(' ', s)]
         moves = {(self._find_mapping(s[:i]+'x'+s[i+1:])):i for i in indices}
-        best_move = self.model.evaluate_and_select(moves.keys())
+        best_move = self.model.evaluate_and_select(moves.keys(),using_ucb=is_training)
         i = moves[best_move]
         return (i/self.game.n_rows, i%self.game.n_cols), best_move
 
@@ -115,16 +118,16 @@ class Robot(object):
         for i in xrange(n):
             if i == 0:
                 print 'start training...'
-            if i % 1000 == 0:
+            if i % 100 == 0:
                 print '{n} trains'.format(n=i)
                 print 'tie:{tie},x_win{x_win},o_win:{o_win}'.format(tie=tie*1.0/(i+1),x_win=x_win*1.0/(i+1),o_win=o_win*1.0/(i+1))
             chesses = ['x', 'o']
             new = True
-            player = 0
+            player = random.randint(0,1)
             while new or self.game.is_end():
                 self.game.reset()
                 new = False
-                init_state = self.generate_random_game_state()
+                init_state = self.generate_random_game_state(next_player=player,max_chess=0)
                 self._state_to_gameboard(init_state)
                 self.game.judge(print_msg=False)
             init_state = self._find_mapping(init_state)
@@ -132,30 +135,30 @@ class Robot(object):
             while not self.game.is_end():
                 chess = chesses[player]
                 current_state = self._gameboard_to_state()
-                if player == -1:
+                if player == 1:
                     current_state = self.swap_state(current_state)
                 pos, move = self.get_optimal_move_from_UCT_model(current_state)
                 all_states_trans[chess] += move,
                 self.game.place(chess,pos,print_msg=False)
-                player = ~player
+                player = 1-player
             if self.game.check_win_for('x'):
                 x_win += 1
                 for move in all_states_trans['x']:
-                    self.model.update(self.model.nodes[move],1)
+                    self.model.update(self.model.nodes[move],2)
                 for move in all_states_trans['o']:
-                    self.model.update(self.model.nodes[move],-1)
+                    self.model.update(self.model.nodes[move],0)
             elif self.game.check_win_for('o'):
                 o_win += 1
                 for move in all_states_trans['o']:
-                    self.model.update(self.model.nodes[move],1.2)
+                    self.model.update(self.model.nodes[move],2)
                 for move in all_states_trans['x']:
-                    self.model.update(self.model.nodes[move],-1)
+                    self.model.update(self.model.nodes[move],0)
             else:
                 tie += 1
                 for move in all_states_trans['x']:
-                    self.model.update(self.model.nodes[move],0)
+                    self.model.update(self.model.nodes[move],1)
                 for move in all_states_trans['o']:
-                    self.model.update(self.model.nodes[move],0.2)
+                    self.model.update(self.model.nodes[move],1)
 
     def train(self):
         x_all, y_all = self.generate_training_data()
@@ -164,30 +167,20 @@ class Robot(object):
         eval_indices = set(range(size)) - training_indices
         training_indices = list(training_indices)
         eval_indices = list(eval_indices)
-        import pdb; pdb.set_trace()
         x_train, y_train = x_all[training_indices,:], y_all[training_indices]
         x_eval, y_eval = x_all[eval_indices,:], y_all[eval_indices]
-        self.value_network.train(x_train,y_train,x_eval,y_eval, batch_size = len(training_indices)/100, epochs=200) 
+        self.value_network.train(x_train,y_train,x_eval,y_eval, batch_size = len(training_indices)/20, epochs=1000) 
 
     def encode_state(self, s):
-        s = s.replace(' ','0')
-        s = s.replace('x','1')
-        s = s.replace('o','2')
+        s = map(lambda x: 0 if x==' ' else 1 if x=='x' else -1, list(s))
         return map(int, list(s))
-
-    def decode_state(self, arr):
-        s = ''.join(arr)
-        s = s.replace('0', ' ')
-        s = s.replace('1', 'x')
-        s = s.replace('2', 'o')
-        return s
 
     def generate_training_data(self):
         x_batch, y_batch = [], []
         x_batch_set = set([])
         i = 0
-        while i < 1000:
-            s = self.generate_random_game_state(is_training=True)
+        while i < 4000:
+            s = self.generate_random_game_state(next_player=random.randint(0,1), max_chess=self.game.n_rows)
             if s in x_batch_set:
                 continue
             x_batch_set.add(s)
@@ -196,7 +189,7 @@ class Robot(object):
         for s in x_batch_set:
             x = self.encode_state(s)
             s = self._find_mapping(s)
-            if self.model.nodes[s].n < 10:
+            if self.model.nodes[s].n < 5:
                 continue
             y = self.model.nodes[s].win * 1.0 / self.model.nodes[s].n
             x_batch += x,
@@ -210,8 +203,8 @@ class Robot(object):
         self.game_states, self.model = dill.load(open(model_path, 'r'))
 
 if __name__=='__main__':
-    tictactoe = TicTacToe(3,3)
+    tictactoe = TicTacToe(6,4)
     robot = Robot(tictactoe)
-    robot.sample(2000)
+    robot.sample(30000)
     robot.save_model('model.pkl')
     robot.train()
