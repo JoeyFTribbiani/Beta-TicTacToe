@@ -2,9 +2,9 @@ from tictactoe import TicTacToe
 from robot import Robot
 import random
 def test():
-    tictactoe = TicTacToe(6,4)
+    tictactoe = TicTacToe(3,3,play_on_line=False)
     robot = Robot(tictactoe)
-    # robot.load_model('model.pkl')
+    robot.load_model('model.pkl')
     robot.load_value_network('value_network.m')
     chesses = ['x', 'o']
     for _ in range(3):
@@ -22,7 +22,7 @@ def test():
                 pos = tuple(int(x.strip()) for x in pos.split(','))
             else:
                 print "robot play"
-                pos = robot.get_optimal_move_from_value_network(state)
+                pos = robot.get_optimal_move_from_UCT_model(state,is_training=False)
             print "{chess} move {pos}".format(chess=chess,pos=pos)
             tictactoe.place(chess, pos, print_board=True)
             player = 1-player

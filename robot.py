@@ -5,16 +5,18 @@ import re
 import numpy as np
 from value_network import ValueNetwork
 import dill
+import time
 class Robot(object):
     def __init__(self, game):
         self.model = UCT_Model()
         self.game = game
-        self.game_states = set([])
+        self.game_states = {}
         INPUT_SHAPE = self.game.n_rows*self.game.n_cols
         HIDDEN_DIMS = (100,70,50,20,3)
         OUTPUT_SHAPE = 1
         self.value_network = ValueNetwork(INPUT_SHAPE, HIDDEN_DIMS, OUTPUT_SHAPE)
         self._cache_mapping_set = self._create_mapping_state_set()
+        self._state_group_counter = -1
         
     def load_value_network(self, model_path):
         self.value_network.load_model(model_path)
@@ -33,6 +35,7 @@ class Robot(object):
 
     def _statestring_to_statematrix(self, s):
         mat = []
+        s = s.split(",")
         for i in range(self.game.n_rows):
             mat += list(s[i*self.game.n_cols:(i+1)*self.game.n_cols]),
         return mat
@@ -41,16 +44,15 @@ class Robot(object):
         mat = self._statestring_to_statematrix(s)
         new_mat = []
         for row in list(zip(*mat)):
-            new_mat += ''.join(row[::-1]),
-
-        return ''.join(new_mat)
+            new_mat += ','.join(row[::-1]),
+        return ','.join(new_mat)
 
     def _flip_state(self, s):
         mat = self._statestring_to_statematrix(s)
         new_mat = []
         for row in mat[::-1]:
-            new_mat += ''.join(row)
-        return ''.join(new_mat)
+            new_mat += ','.join(row),
+        return ','.join(new_mat)
 
     def _create_mapping_state_set(self):
         r = self._rotate_clockwise_state
@@ -63,19 +65,18 @@ class Robot(object):
             dfs(r(s), s_set)
             dfs(f(s), s_set)
             return
-        s = ''.join([str(i) for i in range(self.game.n_rows*self.game.n_cols)])
+        s = ','.join([str(i) for i in range(self.game.n_rows*self.game.n_cols)])
         dfs(s, s_set)
         return s_set
                     
     def _find_mapping(self,s):
         transforms = self._cache_mapping_set
-        for trans in transforms:
-            tmp_state = ''.join([s[int(i)] for i in trans])
-            if tmp_state in self.game_states:
-                s = tmp_state
-                break
-        self.game_states.add(s)
-        return s
+        if s not in self.game_states:
+            self._state_group_counter += 1
+            for trans in transforms:
+                tmp_state = ''.join([s[int(i)] for i in trans.split(',')])
+                self.game_states[tmp_state]=self._state_group_counter
+        return self.game_states[s]
 
     def _gameboard_to_state(self):
         s = ''
@@ -87,19 +88,21 @@ class Robot(object):
     def _state_to_gameboard(self, s):
         for i in range(self.game.n_rows):
             for j in range(self.game.n_cols):
-                self.game.fast_place(s[i*self.game.n_rows+j],(i,j))
+                self.game.fast_place(s[i*self.game.n_rows+j],(i,j), with_judge=False)
 
     def get_optimal_move_from_value_network(self, s):
         indices = [m.start() for m in re.finditer(' ', s)]
-        moves = {self.value_network.predict(np.asarray([self.encode_state(self._find_mapping(s[:i]+'x'+s[i+1:]))]))[0][0]:i for i in indices}
+        moves = {self.value_network.predict(np.asarray([self.encode_state(s[:i]+'x'+s[i+1:])]))[0][0]:i for i in indices}
         i = moves[max(moves.keys())]
         return (i/self.game.n_rows, i%self.game.n_cols)
         
     def get_optimal_move_from_UCT_model(self, s, is_training=True):
         indices = [m.start() for m in re.finditer(' ', s)]
-        moves = {(self._find_mapping(s[:i]+'x'+s[i+1:])):i for i in indices}
+        moves = {self._find_mapping(s[:i]+'x'+s[i+1:]):i for i in indices}
         best_move = self.model.evaluate_and_select(moves.keys(),using_ucb=is_training)
         i = moves[best_move]
+        if not is_training:
+            return (i/self.game.n_rows, i%self.game.n_cols)
         return (i/self.game.n_rows, i%self.game.n_cols), best_move
 
     def swap_state(self, s):
@@ -118,7 +121,7 @@ class Robot(object):
         for i in xrange(n):
             if i == 0:
                 print 'start training...'
-            if i % 100 == 0:
+            if i % 1000 == 0:
                 print '{n} trains'.format(n=i)
                 print 'tie:{tie},x_win{x_win},o_win:{o_win}'.format(tie=tie*1.0/(i+1),x_win=x_win*1.0/(i+1),o_win=o_win*1.0/(i+1))
             chesses = ['x', 'o']
@@ -130,16 +133,18 @@ class Robot(object):
                 init_state = self.generate_random_game_state(next_player=player,max_chess=0)
                 self._state_to_gameboard(init_state)
                 self.game.judge(print_msg=False)
-            init_state = self._find_mapping(init_state)
+            init_state_mapping = self._find_mapping(init_state)
             all_states_trans = {'o':[],'x':[]}
+            all_states_trans[('x','o')[~player]]+=init_state_mapping,
             while not self.game.is_end():
                 chess = chesses[player]
                 current_state = self._gameboard_to_state()
+                
                 if player == 1:
                     current_state = self.swap_state(current_state)
-                pos, move = self.get_optimal_move_from_UCT_model(current_state)
-                all_states_trans[chess] += move,
-                self.game.place(chess,pos,print_msg=False)
+                pos, mapping = self.get_optimal_move_from_UCT_model(current_state)
+                all_states_trans[chess] += mapping,
+                self.game.fast_place(chess,pos)
                 player = 1-player
             if self.game.check_win_for('x'):
                 x_win += 1
@@ -203,7 +208,7 @@ class Robot(object):
         self.game_states, self.model = dill.load(open(model_path, 'r'))
 
 if __name__=='__main__':
-    tictactoe = TicTacToe(6,4)
+    tictactoe = TicTacToe(3,3)
     robot = Robot(tictactoe)
     robot.sample(30000)
     robot.save_model('model.pkl')

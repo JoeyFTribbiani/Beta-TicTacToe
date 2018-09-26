@@ -113,31 +113,38 @@ class TicTacToe(Board):
     def place(self, chess, pos, print_board=False, print_msg=True):
         self._place(chess, pos, self._check_rule, self.judge, print_board, print_msg)
 
-    def fast_place(self, chess, pos):
+    def fast_place(self, chess, pos, with_judge=True):
         self.board[pos].status = chess
+        if with_judge:
+            self.judge(print_msg=False, chess=chess, pos=pos)
         
     def _check_rule(self, chess, pos):
         if self.board[pos]._is_empty():
             return True
         else:
             return False
-
-    def check_win_for(self, chess):
+        
+    def check_win_for(self, chess, pos=None):
         mat = self._get_all_cell_status()
-        row = np.apply_along_axis(lambda x: chess*self.n_wining in ''.join(x),1,mat).any()
-        col = np.apply_along_axis(lambda x: chess*self.n_wining in ''.join(x),0,mat).any()
-        diag = any([chess*self.n_wining in ''.join(mat[::-1,:].diagonal(i))>=self or  chess*self.n_wining in ''.join(mat.diagonal(i)) for i in range(-self.n_rows,self.n_rows+1)])
+        if pos:
+            row = chess*self.n_wining in ''.join(mat[pos[0],:])
+            col = chess*self.n_wining in ''.join(mat[:,pos[1]])
+            diag = chess*self.n_wining in ''.join(mat[::-1,:].diagonal(pos[1]-pos[0])) or chess*self.n_wining in ''.join(mat.diagonal(pos[1]-pos[0]))
+        else:
+            row = np.apply_along_axis(lambda x: chess*self.n_wining in ''.join(x),1,mat).any()
+            col = np.apply_along_axis(lambda x: chess*self.n_wining in ''.join(x),0,mat).any()
+            diag = any([chess*self.n_wining in ''.join(mat[::-1,:].diagonal(i)) or chess*self.n_wining in ''.join(mat.diagonal(i)) for i in range(-self.n_rows,self.n_rows+1)])
         return row or col or diag
 
-    def judge(self, print_board=False, print_msg=True):
+    def judge(self, print_board=False, print_msg=True, chess=None, pos=None):
         if print_board:
             print self
         flag = -1
         chess = None
-        if self.check_win_for(self.chesses[0]):
+        if (chess==0 or chess==None) and self.check_win_for(self.chesses[0], pos):
             flag = 0
             chess = self.chesses[0]
-        elif self.check_win_for(self.chesses[1]):
+        elif (chess==1 or chess==None) and self.check_win_for(self.chesses[1]):
             flag = 0
             chess = self.chesses[1]
         elif self._is_full():
