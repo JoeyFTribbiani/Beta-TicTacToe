@@ -1,5 +1,5 @@
 # Beta-TicTacToe
-<p>This is supposed to be an entertaining project. Welcome to comment but all rights are reserved:) Please give some credits to the author if you like it.</p>
+<p>This is supposed to be an entertaining project. I am too lazy to write a description about this. May revise this later.</p>
 
 <p>For training, just run the following script:</p>
 <pre><code>python robot.py</code></pre>
